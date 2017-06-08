@@ -10,24 +10,17 @@ const {BlogPost, User} = require('./models');
 
 const app = express();
 
-const basicStrategy = new BasicStrategy(function(username, password, callback) {
-  let user;
-
-  User.findOne({username: username}).exec()
-    .then(_user => {
-      user = _user;
-      if(!user) {
-        return callback(null, false, {message: 'Incorrect username'});
-      }
-      return user.validatePassword(password);
-    })
-    .then(isValid => {
-      if (!isValid) {
-        return callback(null, false, {message: 'Incorrect password'});
-      } else {
-        return callback(null, user);
-      }
-    });
+const basicStrategy = new BasicStrategy(async function(username, password, callback) {
+  const user = await User.findOne({username}).exec();
+  if(!user) {
+    return callback(null, false, {message: 'Incorrect username'});
+  }
+  const isValid = await user.validatePassword(password);
+  if (!isValid) {
+    return callback(null, false, {message: 'Incorrect password'});
+  } else {
+    return callback(null, user);
+  }
 });
 
 passport.use(basicStrategy);
@@ -62,7 +55,7 @@ app.get('/posts/:id', (req, res) => {
 });
 
 app.post('/posts', passport.authenticate('basic', {session: false}), (req, res) => {
-  console.log(1, 'hello');
+
   const requiredFields = ['title', 'content', 'author'];
   for (let i=0; i<requiredFields.length; i++) {
     const field = requiredFields[i];
@@ -72,7 +65,6 @@ app.post('/posts', passport.authenticate('basic', {session: false}), (req, res) 
       return res.status(400).send(message);
     }
   }
-  console.log(req.user);
   BlogPost
     .create({
       title: req.body.title,
@@ -94,8 +86,6 @@ app.post('/posts', passport.authenticate('basic', {session: false}), (req, res) 
 app.post('/users', (req, res) => {
 
   let {username, password, firstName, lastName} = req.body;
-  // res.send('Hello World');
-  // return;
   return User.find({username}).count().exec()
     .then(count => {
       if (count > 0) {
