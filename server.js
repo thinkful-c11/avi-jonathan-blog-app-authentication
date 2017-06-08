@@ -2,12 +2,35 @@ const bodyParser = require('body-parser');
 const express = require('express');
 const mongoose = require('mongoose');
 const morgan = require('morgan');
+const passport = require('passport');
 
+const{BasicStrategy} = require('passport-http');
 const {DATABASE_URL, PORT} = require('./config');
 const {BlogPost, User} = require('./models');
 
 const app = express();
 
+const basicStrategy = new BasicStrategy(function(username, password, callback) {
+  let user;
+
+  User.findOne({username: username}).exec()
+    .then(_user => {
+      user = _user;
+      if(!user) {
+        return callback(null, false, {message: 'Incorrect username'});
+      }
+      return user.validatePassword(password);
+    })
+    .then(isValid => {
+      if (!isValid) {
+        return callback(null, false, {message: 'Incorrect password'});
+      } else {
+        return callback(null, user);
+      }
+    });
+});
+
+passport.use(basicStrategy);
 app.use(morgan('common'));
 app.use(bodyParser.json());
 
@@ -38,7 +61,8 @@ app.get('/posts/:id', (req, res) => {
     });
 });
 
-app.post('/posts', (req, res) => {
+app.post('/posts', passport.authenticate('basic', {session: false}), (req, res) => {
+  console.log(1, 'hello');
   const requiredFields = ['title', 'content', 'author'];
   for (let i=0; i<requiredFields.length; i++) {
     const field = requiredFields[i];
@@ -48,12 +72,15 @@ app.post('/posts', (req, res) => {
       return res.status(400).send(message);
     }
   }
-
+  console.log(req.user);
   BlogPost
     .create({
       title: req.body.title,
       content: req.body.content,
-      author: req.body.author
+      author: {
+        firstName: req.user.firstName,
+        lastName: req.user.lastName
+      }
     })
     .then(blogPost => res.status(201).json(blogPost.apiRepr()))
     .catch(err => {
@@ -61,15 +88,16 @@ app.post('/posts', (req, res) => {
       res.status(500).json({error: 'Something went wrong'});
     });
 
+
 });
 
 app.post('/users', (req, res) => {
+
   let {username, password, firstName, lastName} = req.body;
   // res.send('Hello World');
   // return;
   return User.find({username}).count().exec()
     .then(count => {
-      console.log(count, 'Are we here?');
       if (count > 0) {
         return Promise.reject({
           name: 'AuthenticationError',
@@ -80,15 +108,12 @@ app.post('/users', (req, res) => {
       return User.hashPassword(password);
     })
     .then(hash => {
-      console.log(2, 'Are we here?');
       return User.create({username, password: hash, firstName, lastName});
     })
     .then(user => {
-      console.log(3, 'Are we here?');
       return res.status(201).json(user.apiRepr());
     })
     .catch(err => {
-      console.log(4, 'Are we here?');
       if (err.name === 'AuthenticationError') {
         return res.status(400).json({message: err.message});
       }
@@ -97,7 +122,7 @@ app.post('/users', (req, res) => {
 });
 
 
-app.delete('/posts/:id', (req, res) => {
+app.delete('/posts/:id', passport.authenticate('basic', {session: false}), (req, res) => {
   BlogPost
     .findByIdAndRemove(req.params.id)
     .exec()
@@ -111,7 +136,7 @@ app.delete('/posts/:id', (req, res) => {
 });
 
 
-app.put('/posts/:id', (req, res) => {
+app.put('/posts/:id', passport.authenticate('basic', {session: false}), (req, res) => {
   if (!(req.params.id && req.body.id && req.params.id === req.body.id)) {
     res.status(400).json({
       error: 'Request path id and request body id values must match'
@@ -134,8 +159,8 @@ app.put('/posts/:id', (req, res) => {
 });
 
 
-app.delete('/:id', (req, res) => {
-  BlogPosts
+app.delete('/:id', passport.authenticate('basic', {session: false}), (req, res) => {
+  BlogPost
     .findByIdAndRemove(req.params.id)
     .exec()
     .then(() => {
