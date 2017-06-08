@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const morgan = require('morgan');
 
 const {DATABASE_URL, PORT} = require('./config');
-const {BlogPost} = require('./models');
+const {BlogPost, User} = require('./models');
 
 const app = express();
 
@@ -43,7 +43,7 @@ app.post('/posts', (req, res) => {
   for (let i=0; i<requiredFields.length; i++) {
     const field = requiredFields[i];
     if (!(field in req.body)) {
-      const message = `Missing \`${field}\` in request body`
+      const message = `Missing \`${field}\` in request body`;
       console.error(message);
       return res.status(400).send(message);
     }
@@ -57,10 +57,43 @@ app.post('/posts', (req, res) => {
     })
     .then(blogPost => res.status(201).json(blogPost.apiRepr()))
     .catch(err => {
-        console.error(err);
-        res.status(500).json({error: 'Something went wrong'});
+      console.error(err);
+      res.status(500).json({error: 'Something went wrong'});
     });
 
+});
+
+app.post('/users', (req, res) => {
+  let {username, password, firstName, lastName} = req.body;
+  // res.send('Hello World');
+  // return;
+  return User.find({username}).count().exec()
+    .then(count => {
+      console.log(count, 'Are we here?');
+      if (count > 0) {
+        return Promise.reject({
+          name: 'AuthenticationError',
+          message: 'username already taken'
+        });
+      }
+
+      return User.hashPassword(password);
+    })
+    .then(hash => {
+      console.log(2, 'Are we here?');
+      return User.create({username, password: hash, firstName, lastName});
+    })
+    .then(user => {
+      console.log(3, 'Are we here?');
+      return res.status(201).json(user.apiRepr());
+    })
+    .catch(err => {
+      console.log(4, 'Are we here?');
+      if (err.name === 'AuthenticationError') {
+        return res.status(400).json({message: err.message});
+      }
+      res.status(500).json({message: 'Internal server error'});
+    });
 });
 
 
@@ -144,15 +177,15 @@ function runServer(databaseUrl=DATABASE_URL, port=PORT) {
 // use it in our integration tests later.
 function closeServer() {
   return mongoose.disconnect().then(() => {
-     return new Promise((resolve, reject) => {
-       console.log('Closing server');
-       server.close(err => {
-           if (err) {
-               return reject(err);
-           }
-           resolve();
-       });
-     });
+    return new Promise((resolve, reject) => {
+      console.log('Closing server');
+      server.close(err => {
+        if (err) {
+          return reject(err);
+        }
+        resolve();
+      });
+    });
   });
 }
 
@@ -160,6 +193,6 @@ function closeServer() {
 // runs. but we also export the runServer command so other code (for instance, test code) can start the server as needed.
 if (require.main === module) {
   runServer().catch(err => console.error(err));
-};
+}
 
 module.exports = {runServer, app, closeServer};
